@@ -5,18 +5,18 @@ from itertools import chain
 
 class Card:
     not_nums = dict(zip(range(11, 17), 'JQKA00'))
-    trump = None
+
+    # trump = None
 
     def __init__(self, rank, suit):
         self.rank = rank
         self.suit = suit
 
     def __gt__(self, other):
-
         if self.suit == other.suit:
             return self.rank > other.rank
-        elif self.suit == self.trump:
-            return True
+            # elif self.suit == self.trump:
+            #    return True
 
     def __repr__(self):
         if int(self.rank) > 10:
@@ -29,11 +29,12 @@ class Card:
 class Deck:
     not_nums = dict(zip(range(11, 15), 'JQKA'))
 
-    def __init__(self, french=False, jokers=False, empty=False):
+    def __init__(self, local_card, french=False, jokers=False, empty=False):
+        self.Card = local_card
         min_rank = 2 if french else 6
         ranks = [n for n in range(min_rank, 15)]
         suits = list('♠♥♣♦')
-        self.cards = [Card(rank, suit) for rank in ranks for suit in suits]
+        self.cards = [self.Card(rank, suit) for rank in ranks for suit in suits]
         if empty:
             self.cards = []
 
@@ -50,7 +51,7 @@ class Deck:
         return bool(self.cards)
 
     def get_upper_cards(self, num=None):
-        if num==None:
+        if num == None:
             return self.cards.pop()
         else:
             hand = []
@@ -83,8 +84,8 @@ class Deck:
 
 
 class Hand(Deck):
-    def __init__(self, cards=None):
-        super().__init__(empty=True)
+    def __init__(self, local_card, cards=None):
+        super().__init__(local_card=local_card, empty=True)
         if cards:
             self.cards = cards
 
@@ -114,7 +115,7 @@ class Hand(Deck):
                 #     cards = [max(cards), ]
                 else:
                     raise Exception('Bad filter')
-        return Hand(list(cards))
+        return Hand(local_card=self.Card, cards=list(cards))
 
     def get_card(self, index):
         return self.cards.pop(index)
@@ -125,7 +126,7 @@ class IPlayer(metaclass=ABCMeta):
         self.game = game
         self.name = name
         self.human = human
-        self.hand = Hand()
+        self.hand = Hand(local_card=game.LocalCard)
         self.attack_flag = False
 
     def __repr__(self):
@@ -189,7 +190,7 @@ class HumanPlayer(IPlayer):
         field_view.append('My cards'.center(100, "-"))
         my_cards = ''
 
-        for num, card in enumerate(sorted(self.hand, key=lambda x: x.rank)):
+        for num, card in enumerate(self.hand):
             info = ''
             if self.attack_flag:
                 if self.game.field.ranks and card.rank in self.game.field.ranks:
@@ -216,13 +217,6 @@ class HumanPlayer(IPlayer):
         for line in field_view:
             result += str(line) + '\n'
         return result
-
-    # def start_turn_card(self):
-    #     num = self.user_link(self.get_field_view())
-    #     try:
-    #         return self.hand.get_card(num)
-    #     except IndexError:
-    #         return None
 
     def attack(self):
         num = self.user_link(self.get_field_view())
@@ -308,11 +302,21 @@ class Game:
     run = True
     field = None
 
-    def __init__(self, number_of_players=2, playerClass=AIDuel):
-        self.deck = Deck()
+    class LocalCard(Card):
+        trump = None
+
+        def __gt__(self, other):
+            if self.suit == other.suit:
+                return self.rank > other.rank
+            elif self.suit == self.trump:
+                return True
+
+    def __init__(self, players_classes):
+        self.deck = Deck(local_card=self.LocalCard)
         self.deck.shuffle()
-        self.players = [playerClass(name="Player{}".format(i + 1), game=self) for i in range(number_of_players)]
-        self.players_num = number_of_players
+        self.players = [player(name="{}-{}".format(player.__name__, num + 1), game=self) for num, player in
+                        enumerate(players_classes)]
+        self.players_num = len(players_classes)
         self.cards_num = 6
         self.winner = None
 
@@ -323,7 +327,7 @@ class Game:
     def choice_first(self):
         min([]) if [] else 123
         start_hands = [player.hand.filter(suit=self.trump) for player in self.players]
-        start_hands = [min(hand.cards) if hand.cards else Card(15, self.trump) for hand in start_hands]
+        start_hands = [min(hand.cards) if hand.cards else self.LocalCard(15, self.trump) for hand in start_hands]
         return start_hands.index(min(start_hands))
 
     def restore_cards(self):
@@ -337,7 +341,7 @@ class Game:
         trump_card = self.deck.get_upper_cards()
         self.deck.put_in_end(trump_card)
         self.trump = trump_card.suit
-        Card.trump = trump_card.suit
+        self.LocalCard.trump = trump_card.suit
         self.turn = self.choice_first()
 
     def get_attacker_player(self):
@@ -350,7 +354,6 @@ class Game:
         self.get_attacker_player().attack_flag = False
         self.get_defender_player().attack_flag = True
         self.turn = (self.turn + 1) % self.players_num
-
 
     def finish_check(self):
         hands_size = [player.hand_size() for player in self.players]
@@ -368,13 +371,11 @@ class Game:
 class GameDuel(Game):
     current_turn = None
 
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(2, *args, **kwargs)
+    def __init__(self, player1, player2):
+        super().__init__([player1, player2])
 
     def play_loop(self):
         self.get_attacker_player().attack_flag = True
-
 
         while self.run:
             # start turn.
@@ -404,6 +405,6 @@ class GameDuel(Game):
 
 
 for i in range(100):
-    game = GameDuel(playerClass=HumanPlayer)
+    game = GameDuel(*[HumanPlayer] * 2)
     game.preparations()
     print('---------------' + game.play_loop() + '----------------')
